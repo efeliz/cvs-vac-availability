@@ -2,31 +2,48 @@
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using CVS_Vac.Fetcher.Models;
+using PlaywrightSharp;
+using System.Linq;
 
 namespace CVS_Vac.Fetcher
 {
     class Program
     {
         private static string VAC_ROOT_URL = "https://www.cvs.com/immunizations/covid-19-vaccine";
+        private static IPlaywright PlaywrightRef;
+        private static IBrowser BrowserRef;
+        private static IPage FetcherPageRef;
 
         private static string SENDGRID_API_KEY;
         private static List<string> SUBSCRIBER_EMAILS = new List<string>();
         private static int DAILY_NOTICE_LIMIT = 5;
 
-        private static string SELECTED_STATE = "";
-        private static List<string> SELECTED_CITIES = new List<string>();
+        private static List<State> FETCHED_STATES = new List<State>();
         private static Dictionary<DateTime, int> DAILY_SENT_LOG = new Dictionary<DateTime, int>();
 
 
         static async Task Main(string[] args)
         {
             Console.WriteLine("Hi, thanks for using this CVS Covid-19 Vaccine Booking Status checker program.\n");
-            Console.WriteLine("First we'll need to set some things set up before getting started.\n");
+            Console.WriteLine("First we'll need to set some things set up before getting started. One moment please...\n");
 
-            Thread.Sleep(1000);
+            SetupScraper().Wait();
+
+            await GetStates();
 
             // run initial setup
-            await InitialSetup();
+            //await InitialSetup();
+        }
+
+        private static async Task SetupScraper()
+        {
+            PlaywrightRef = await Playwright.CreateAsync();
+            BrowserRef = await PlaywrightRef.Firefox.LaunchAsync(headless: false);
+            FetcherPageRef = await BrowserRef.NewPageAsync();
+            await FetcherPageRef.GoToAsync(VAC_ROOT_URL, waitUntil: LifecycleEvent.Networkidle);
+
+            await Task.Delay(5000);
         }
 
         private static async Task InitialSetup()
@@ -54,6 +71,22 @@ namespace CVS_Vac.Fetcher
             }
 
             // get available states/territories
+            await GetStates();
+        }
+
+        private static async Task<List<State>> GetStates()
+        {
+            List<State> states = new List<State>();
+
+            // await FetcherPageRef.ReloadAsync();
+
+            // parse state list
+            var statesAccordian = await FetcherPageRef.QuerySelectorAllAsync(".container .accordian__container");
+            Console.WriteLine(statesAccordian.First());
+
+            await Task.Delay(5000);
+
+            return states;
         }
     }
 }
