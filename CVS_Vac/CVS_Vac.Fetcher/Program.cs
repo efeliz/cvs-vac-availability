@@ -30,7 +30,12 @@ namespace CVS_Vac.Fetcher
 
             SetupScraper().Wait();
 
-            await GetStates();
+            // get available states/territories
+            FETCHED_STATES = await GetStates();
+            foreach (var state in FETCHED_STATES)
+            {
+                Console.WriteLine($"State: {state.Title}\nCities:{state.Cities.Count}");
+            }
 
             // run initial setup
             //await InitialSetup();
@@ -71,7 +76,11 @@ namespace CVS_Vac.Fetcher
             }
 
             // get available states/territories
-            await GetStates();
+            List<State> foundStates = await GetStates();
+            foreach (var state in foundStates)
+            {
+                Console.WriteLine($"State: {state.Title}\nCities:{state.Cities.Count}");
+            }
         }
 
         private static async Task<List<State>> GetStates()
@@ -81,12 +90,66 @@ namespace CVS_Vac.Fetcher
             // await FetcherPageRef.ReloadAsync();
 
             // parse state list
-            var statesAccordian = await FetcherPageRef.QuerySelectorAllAsync(".container .accordian__container");
-            Console.WriteLine(statesAccordian.First());
+            var statesAccordian = (await FetcherPageRef.QuerySelectorAllAsync(".container .accordian__container .accordian__elemcontent")).First();
+            var stateAnchorElements = await statesAccordian.QuerySelectorAllAsync(".link__column li.link__row a");
+            foreach (var anchElem in stateAnchorElements)
+            {
+                var stateName = (await anchElem.GetAttributeAsync("data-analytics-name")).Trim();
+                var fetchedCities = await GetCities(anchElem);
+
+                // create state obj
+                var foundState = new State(
+                    title: stateName,
+                    cities: fetchedCities
+                );
+
+                states.Add(foundState);
+
+                // close modal
+                await FetcherPageRef.ClickAsync(".modal__box.modal--active .modal__inner button");
+                await FetcherPageRef.WaitForSelectorAsync(".modal__box modal--active", state: WaitForState.Hidden);
+            }
 
             await Task.Delay(5000);
 
             return states;
+        }
+
+        private static async Task<List<City>> GetCities(IElementHandle stateLinkElem)
+        {
+            List<City> cities = new List<City>();
+
+            // click state link
+            await stateLinkElem.ClickAsync();
+
+            await Task.Delay(1000);
+
+            await FetcherPageRef.WaitForSelectorAsync(".modal__box.modal--active", state: WaitForState.Visible);
+
+            var cityElements = await FetcherPageRef.QuerySelectorAllAsync(".modal__box.modal--active .covid-status table tbody tr");
+
+            foreach (var city in cityElements)
+            {
+                var cityNameElem = await city.QuerySelectorAsync("td:nth-child(1) span");
+                var cityName = (await cityNameElem.GetInnerTextAsync()).Trim();
+
+                var cityStatusElem = await city.QuerySelectorAsync("td:nth-child(2) span");
+                var cityStatus = (await cityStatusElem.GetInnerTextAsync()).Trim();
+
+                //await Task.Delay(500);
+
+                //Console.WriteLine($"City Name: {cityName}\nCity Status: {cityStatus}\n");
+
+                // create city obj
+                City foundCity = new City(
+                    title: cityName,
+                    isAvailable: cityStatus == "Available" ? true : false
+                );
+
+                cities.Add(foundCity);
+            }
+
+            return cities;
         }
     }
 }
