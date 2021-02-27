@@ -14,6 +14,7 @@ namespace CVS_Vac.Fetcher
         private static IPlaywright PlaywrightRef;
         private static IBrowser BrowserRef;
         private static IPage FetcherPageRef;
+        private static DateTime DateToday;
 
         private static int FETCHER_MINUTES = 1;
         private static int FETCHER_INTERVAL = (60000 * FETCHER_MINUTES);
@@ -45,13 +46,15 @@ namespace CVS_Vac.Fetcher
         private static async Task SetupScraper()
         {
             PlaywrightRef = await Playwright.CreateAsync();
-            BrowserRef = await PlaywrightRef.Firefox.LaunchAsync(headless: false);
+            BrowserRef = await PlaywrightRef.Chromium.LaunchAsync(headless: true);
             FetcherPageRef = await BrowserRef.NewPageAsync();
             await FetcherPageRef.GoToAsync(VAC_ROOT_URL, waitUntil: LifecycleEvent.Networkidle);
         }
 
         private static async Task InitialSetup()
-        { 
+        {
+            DateToday = DateTime.Today;
+
             // retrieve SendGrid API Key
             Console.WriteLine("In order to notify you about any changes, I'll need to use Twilio's SendGrid API. Please paste your API key and press enter to continue:");
             SENDGRID_API_KEY = Console.ReadLine();
@@ -157,6 +160,14 @@ namespace CVS_Vac.Fetcher
                 await FetcherPageRef.ReloadAsync();
                 await FetcherPageRef.WaitForLoadStateAsync(LifecycleEvent.Networkidle);
             }
+
+            // check if the feedback survey pops up
+            if (await FetcherPageRef.IsVisibleAsync("#acsMainInvite") == true)
+            {
+                // close survey window
+                await FetcherPageRef.ClickAsync("#acsMainInvite a#acsFocusFirst");
+                await FetcherPageRef.WaitForSelectorAsync("#acsMainInvite", WaitForState.Hidden);
+            }
             
             // parse state list
             var statesAccordian = (await FetcherPageRef.QuerySelectorAllAsync(".container .accordian__container .accordian__elemcontent")).First();
@@ -246,32 +257,15 @@ namespace CVS_Vac.Fetcher
 
         private static async Task UpdateData()
         {
-            /*List<State> subbedStates = new List<State>();
-            List<City> subbedCities = new List<City>();
-
-            // check which states user is subscribed to
-            for (var s=0; s<FETCHED_STATES.Count; s++)
-            {
-                if (FETCHED_STATES[s].Subscribed)
-                {
-                    subbedStates.Add(FETCHED_STATES[s]);
-                    for (var c=0; c<FETCHED_STATES[s].Cities.Count; c++)
-                    {
-                        if (FETCHED_STATES[s].Cities[c].Subscribed)
-                        {
-                            subbedCities.Add(FETCHED_STATES[s].Cities[c]);
-                        }
-                    }
-                }
-            }*/
-
             Console.WriteLine("Checking for changes in availability... (this may take a moment)");
             List<State> newStates = await GetStates(refreshPage: true);
+            List<State> notifyStatesQueue = new List<State>();
 
             for (var s = 0; s < newStates.Count; s++)
             {
                 var oldState = FETCHED_STATES[s];
                 var newState = newStates[s];
+                List<City> notifyCities = new List<City>();
 
                 for (var c = 0; c < newState.Cities.Count; c++)
                 {
@@ -283,7 +277,7 @@ namespace CVS_Vac.Fetcher
                         {
                             if (oldState.Cities[c].IsAvailable == false && newState.Cities[c].IsAvailable)
                             {
-                                Console.WriteLine($"Notifying ({SUBSCRIBER_EMAILS[0]}) that {newState.Title} has a new vaccine opening in: {newState.Cities[c].Title}");
+                                notifyCities.Add(newState.Cities[c]);
                             }
                         }
                     }
@@ -295,6 +289,39 @@ namespace CVS_Vac.Fetcher
                 // update old state value
                 oldState.LastUpdated = newState.LastUpdated;
                 oldState.ScheduleLink = newState.ScheduleLink;
+
+                // add to notify queue
+                if (notifyCities.Count > 0)
+                {
+                    notifyStatesQueue.Add(new State(
+                        title: newState.Title,
+                        cities: notifyCities,
+                        scheduleLink: newState.ScheduleLink,
+                        lastUpdated: newState.LastUpdated
+                    ));
+                }
+            }
+
+            // send emails
+            if (notifyStatesQueue.Count > 0)
+            {
+                await sendEmails(notifyStatesQueue);
+            }
+        }
+
+        private static async Task sendEmails(List<State> notifiableStates)
+        {
+            DateToday = DateTime.Today;
+            if (!DAILY_SENT_LOG.ContainsKey(DateToday))
+            {
+                DAILY_SENT_LOG.Add(DateToday, 0);
+            }
+
+            // check if daily notice limit has been hit and send email
+            if (DAILY_SENT_LOG[DateToday] + 1 <= DAILY_NOTICE_LIMIT)
+            {
+                Console.WriteLine($"Notifying subscribers that {notifiableStates[0].Title} has new vaccine openings in: {notifiableStates[0].Cities[0].Title}");
+                DAILY_SENT_LOG[DateToday]++;
             }
         }
     }
