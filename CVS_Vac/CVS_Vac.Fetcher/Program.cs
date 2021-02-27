@@ -5,6 +5,8 @@ using System.Threading.Tasks;
 using CVS_Vac.Fetcher.Models;
 using PlaywrightSharp;
 using System.Linq;
+using SendGrid;
+using SendGrid.Helpers.Mail;
 
 namespace CVS_Vac.Fetcher
 {
@@ -14,12 +16,14 @@ namespace CVS_Vac.Fetcher
         private static IPlaywright PlaywrightRef;
         private static IBrowser BrowserRef;
         private static IPage FetcherPageRef;
+        private static ISendGridClient MailerRef;
         private static DateTime DateToday;
 
-        private static int FETCHER_MINUTES = 1;
+        private static int FETCHER_MINUTES = 5;
         private static int FETCHER_INTERVAL = (60000 * FETCHER_MINUTES);
 
         private static string SENDGRID_API_KEY;
+        private static string SENDGRID_SENDER_NAME = "CVS Vaccine Notifier";
         private static List<string> SUBSCRIBER_EMAILS = new List<string>();
         private static int DAILY_NOTICE_LIMIT = 5;
 
@@ -37,6 +41,9 @@ namespace CVS_Vac.Fetcher
             // run initial setup
             InitialSetup().Wait();
 
+            // setup SendGrid
+            MailerRef = new SendGridClient(SENDGRID_API_KEY);
+
             Task.Delay(1000).Wait();
 
             // begin automated fetcher process
@@ -46,7 +53,7 @@ namespace CVS_Vac.Fetcher
         private static async Task SetupScraper()
         {
             PlaywrightRef = await Playwright.CreateAsync();
-            BrowserRef = await PlaywrightRef.Chromium.LaunchAsync(headless: true);
+            BrowserRef = await PlaywrightRef.Firefox.LaunchAsync(headless: true);
             FetcherPageRef = await BrowserRef.NewPageAsync();
             await FetcherPageRef.GoToAsync(VAC_ROOT_URL, waitUntil: LifecycleEvent.Networkidle);
         }
@@ -57,7 +64,7 @@ namespace CVS_Vac.Fetcher
 
             // retrieve SendGrid API Key
             Console.WriteLine("In order to notify you about any changes, I'll need to use Twilio's SendGrid API. Please paste your API key and press enter to continue:");
-            SENDGRID_API_KEY = Console.ReadLine();
+            SENDGRID_API_KEY = Console.ReadLine().Trim();
 
             // fetch subscriber emails
             Console.WriteLine("\nPlease enter a comma-separated list of the emails that would like to receive status updates (ex. person1@email.com,person2@email.com):");
@@ -138,7 +145,7 @@ namespace CVS_Vac.Fetcher
 
             // completion message
             Console.Clear();
-            Console.Write("Setup is now complete and you've selected the following:\n" +
+            Console.Write("Setup is now complete and you've selected the following:\n\n" +
                 $"SendGridKey: {SENDGRID_API_KEY}\n" +
                 $"Subscribers: {subscriberListRaw}\n" +
                 $"Daily Notice Limit: {DAILY_NOTICE_LIMIT}\n" +
@@ -224,10 +231,6 @@ namespace CVS_Vac.Fetcher
 
                 var cityStatusElem = await city.QuerySelectorAsync("td:nth-child(2) span");
                 var cityStatus = (await cityStatusElem.GetInnerTextAsync()).Trim();
-
-                //await Task.Delay(500);
-
-                //Console.WriteLine($"City Name: {cityName}\nCity Status: {cityStatus}\n");
 
                 // create city obj
                 City foundCity = new City(
@@ -320,8 +323,64 @@ namespace CVS_Vac.Fetcher
             // check if daily notice limit has been hit and send email
             if (DAILY_SENT_LOG[DateToday] + 1 <= DAILY_NOTICE_LIMIT)
             {
-                Console.WriteLine($"Notifying subscribers that {notifiableStates[0].Title} has new vaccine openings in: {notifiableStates[0].Cities[0].Title}");
-                DAILY_SENT_LOG[DateToday]++;
+                // generate HTML content string
+                string htmlString = "I'm happy to inform you that a few of the vaccination locations you've subscribed to have become available:<br>";
+                foreach(var state in notifiableStates)
+                {
+                    // state header
+                    htmlString += $"<br><strong>{state.Title}:</strong><br>";
+
+                    // cities list
+                    foreach(var city in state.Cities)
+                    {
+                        htmlString += $"<a href='{state.ScheduleLink}' target='_blank'>{city.Title}</a><br>";
+                    }
+
+                    htmlString += "<br>";
+                }
+
+                // add final line
+                htmlString += $"Good luck and continue to stay safe!";
+
+                // create email and send
+                SendGridMessage emailObj = new SendGridMessage()
+                {
+                    From = new EmailAddress($"{SUBSCRIBER_EMAILS[0]}", SENDGRID_SENDER_NAME),
+                    Subject = "New Vaccine Appointment(s) Available",
+                    PlainTextContent = $"I'm happy to inform you that there are new vaccine openings in several of the subscribed cities/towns.",
+                    HtmlContent = htmlString
+                };
+
+                // add primary subscriber
+                foreach(var subscriber in SUBSCRIBER_EMAILS)
+                {
+                    emailObj.AddTo(email: subscriber, name: subscriber);
+                }
+
+                //if (SUBSCRIBER_EMAILS.Count > 1)
+                //{
+                //    // add subscribers as bcc
+                //    for (var e = 1; e < SUBSCRIBER_EMAILS.Count; e++)
+                //    {
+                //        emailObj.AddBcc(email: SUBSCRIBER_EMAILS[e], name: SUBSCRIBER_EMAILS[e]);
+                //    }
+                //}
+
+                // send!
+                var sendResponse = await MailerRef.SendEmailAsync(emailObj);
+                if (sendResponse.IsSuccessStatusCode)
+                {
+                    Console.WriteLine($"Succesfully notified subscribers that there are new vaccine openings in:");
+                    foreach(var state in notifiableStates)
+                    {
+                        foreach(var city in state.Cities)
+                        {
+                            Console.WriteLine($"- {city.Title}");
+                        }
+                    }
+                    Console.WriteLine();
+                    DAILY_SENT_LOG[DateToday]++;
+                }
             }
         }
     }
