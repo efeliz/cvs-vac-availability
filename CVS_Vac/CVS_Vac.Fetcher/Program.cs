@@ -133,7 +133,7 @@ namespace CVS_Vac.Fetcher
                 }
             }
 
-            Console.WriteLine($"\nNow that you've selected your state ({selectedState.Title}) please enter a comma-separated list of the cities (numbers) you'd like to subscribe to:");
+            Console.WriteLine($"\nNow that you've selected your state/territory ({selectedState.Title}) please enter a comma-separated list of the cities (numbers) you'd like to subscribe to:");
             string[] selectedCitiesRaw = Console.ReadLine().Trim().Replace(" ", "").Split(",");
             List<City> selectedCities = new List<City>();
             foreach(var cityNum in selectedCitiesRaw)
@@ -356,15 +356,6 @@ namespace CVS_Vac.Fetcher
                 {
                     emailObj.AddTo(email: subscriber, name: subscriber);
                 }
-
-                //if (SUBSCRIBER_EMAILS.Count > 1)
-                //{
-                //    // add subscribers as bcc
-                //    for (var e = 1; e < SUBSCRIBER_EMAILS.Count; e++)
-                //    {
-                //        emailObj.AddBcc(email: SUBSCRIBER_EMAILS[e], name: SUBSCRIBER_EMAILS[e]);
-                //    }
-                //}
 
                 // send!
                 var sendResponse = await MailerRef.SendEmailAsync(emailObj);
