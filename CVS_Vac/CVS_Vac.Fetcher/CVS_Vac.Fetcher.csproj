@@ -3,6 +3,15 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net5.0</TargetFramework>
+    <Authors>Estevan Feliz</Authors>
+    <Product>CVS Vac Fetcher</Product>
+    <PackageId>EstevanFeliz.CVS-Vac-Fetcher</PackageId>
+    <PackageProjectUrl>https://github.com/efeliz/cvs-vac-availability</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/efeliz/cvs-vac-availability.git</RepositoryUrl>
+    <RepositoryType>Git</RepositoryType>
+    <PackageReleaseNotes>Production Release</PackageReleaseNotes>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+    <AssemblyName>CVS-Vac-Fetcher</AssemblyName>
   </PropertyGroup>
 
   <ItemGroup>
