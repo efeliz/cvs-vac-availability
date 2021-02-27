@@ -20,3 +20,5 @@ A quick web scraper that checks CVS's website for Covid-19 vaccine availability 
 5. Optionally, you could just download Visual Studio 2019 on Windows or Visual Studio for Mac (not VS code): https://visualstudio.microsoft.com/
 
 Hope this helps anyone who might need it, feel free to contact me at: estevanjfeliz@gmail.com with any questions.
+
+**Disclaimer:** feel free to use at your own volition and as-is.
