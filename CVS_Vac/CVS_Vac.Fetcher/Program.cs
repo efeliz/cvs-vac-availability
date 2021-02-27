@@ -30,27 +30,16 @@ namespace CVS_Vac.Fetcher
 
             SetupScraper().Wait();
 
-            // get available states/territories
-            FETCHED_STATES = await GetStates();
-            foreach (var state in FETCHED_STATES)
-            {
-                Console.WriteLine($"State Name: {state.Title}\n" +
-                    $"State Schedule Link: {state.ScheduleLink}\n" +
-                    $"Cities:{state.Cities.Count}\n" +
-                    $"CVS Last Updated: {state.LastUpdated}\n");
-            }
             // run initial setup
-            //await InitialSetup();
+            await InitialSetup();
         }
 
         private static async Task SetupScraper()
         {
             PlaywrightRef = await Playwright.CreateAsync();
-            BrowserRef = await PlaywrightRef.Firefox.LaunchAsync(headless: false);
+            BrowserRef = await PlaywrightRef.Firefox.LaunchAsync(headless: true);
             FetcherPageRef = await BrowserRef.NewPageAsync();
             await FetcherPageRef.GoToAsync(VAC_ROOT_URL, waitUntil: LifecycleEvent.Networkidle);
-
-            await Task.Delay(5000);
         }
 
         private static async Task InitialSetup()
@@ -77,15 +66,57 @@ namespace CVS_Vac.Fetcher
                 DAILY_NOTICE_LIMIT = dailyLimitParsed;
             }
 
+            Console.Clear();
+            Console.WriteLine("One moment please while I find which locations are currently offering vaccinations... (this could take a minute)");
             // get available states/territories
-            List<State> foundStates = await GetStates();
-            foreach (var state in foundStates)
+            FETCHED_STATES = await GetStates();
+
+            // present state options to pick from (select 1 by number)
+            var statesMidpoint = (int)Math.Floor((double)FETCHED_STATES.Count / 2.0);
+            var statesCol1 = FETCHED_STATES.GetRange(0, statesMidpoint +1);
+            var statesCol2 = FETCHED_STATES.GetRange(statesMidpoint+1, (FETCHED_STATES.Count - statesMidpoint)-1);
+            Console.Clear();
+            for (var s=0; s<statesCol1.Count; s++)
             {
-                Console.WriteLine($"State Name: {state.Title}\n" +
-                    $"State Schedule Link: {state.ScheduleLink}\n" +
-                    $"Cities:{state.Cities.Count}\n" +
-                    $"CVS Last Updated: {state.LastUpdated}\n");
+                Console.Write($"{s+1}. {statesCol1[s].Title}\t");
+                if (statesCol2.Count > s)
+                {
+                    Console.Write($"{(s+2) + statesMidpoint}. {statesCol2[s].Title}\n");
+                }
+                else
+                {
+                    Console.WriteLine();
+                }
             }
+
+            Console.WriteLine("\nPlease select the state (number) you would like to subscribe to for notifications from above:");
+            var selectedStateIndex = Math.Min(Int32.Parse(Console.ReadLine()) - 1, FETCHED_STATES.Count - 1);
+            // select state
+            FETCHED_STATES[selectedStateIndex].Subscribed = true;
+            var selectedState = FETCHED_STATES[selectedStateIndex];
+
+            // City Lister
+            Console.Clear();
+            // present city options to pick from 
+            var citiesMidpoint = (int)Math.Floor((double)selectedState.Cities.Count / 2.0);
+            var citiesCol1 = selectedState.Cities.GetRange(0, citiesMidpoint + 1);
+            var citiesCol2 = selectedState.Cities.GetRange(citiesMidpoint + 1, (selectedState.Cities.Count - citiesMidpoint) - 1);
+            Console.Clear();
+            for (var c = 0; c < citiesCol1.Count; c++)
+            {
+                Console.Write($"{c + 1}. {citiesCol1[c].Title}\t\t");
+                if (citiesCol2.Count > c)
+                {
+                    Console.Write($"{(c + 2) + citiesMidpoint}. {citiesCol2[c].Title}\n");
+                }
+                else
+                {
+                    Console.WriteLine();
+                }
+            }
+
+            Console.WriteLine($"\nNow that you've selected your state ({selectedState.Title}) please enter a comma-separated list of the cities (numbers) you'd like to subscribe to:");
+            Console.WriteLine(Console.ReadLine());
         }
 
         private static async Task<List<State>> GetStates()
@@ -125,8 +156,6 @@ namespace CVS_Vac.Fetcher
                 await FetcherPageRef.ClickAsync(".modal__box.modal--active .modal__inner button");
                 await FetcherPageRef.WaitForSelectorAsync(".modal__box.modal--active", state: WaitForState.Hidden);
             }
-
-            await Task.Delay(5000);
 
             return states;
         }
