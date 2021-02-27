@@ -34,9 +34,11 @@ namespace CVS_Vac.Fetcher
             FETCHED_STATES = await GetStates();
             foreach (var state in FETCHED_STATES)
             {
-                Console.WriteLine($"State: {state.Title}\nCities:{state.Cities.Count}");
+                Console.WriteLine($"State Name: {state.Title}\n" +
+                    $"State Schedule Link: {state.ScheduleLink}\n" +
+                    $"Cities:{state.Cities.Count}\n" +
+                    $"CVS Last Updated: {state.LastUpdated}\n");
             }
-
             // run initial setup
             //await InitialSetup();
         }
@@ -79,7 +81,10 @@ namespace CVS_Vac.Fetcher
             List<State> foundStates = await GetStates();
             foreach (var state in foundStates)
             {
-                Console.WriteLine($"State: {state.Title}\nCities:{state.Cities.Count}");
+                Console.WriteLine($"State Name: {state.Title}\n" +
+                    $"State Schedule Link: {state.ScheduleLink}\n" +
+                    $"Cities:{state.Cities.Count}\n" +
+                    $"CVS Last Updated: {state.LastUpdated}\n");
             }
         }
 
@@ -92,22 +97,33 @@ namespace CVS_Vac.Fetcher
             // parse state list
             var statesAccordian = (await FetcherPageRef.QuerySelectorAllAsync(".container .accordian__container .accordian__elemcontent")).First();
             var stateAnchorElements = await statesAccordian.QuerySelectorAllAsync(".link__column li.link__row a");
+
             foreach (var anchElem in stateAnchorElements)
             {
                 var stateName = (await anchElem.GetAttributeAsync("data-analytics-name")).Trim();
                 var fetchedCities = await GetCities(anchElem);
 
+                string scheduleURL = (await (await FetcherPageRef.QuerySelectorAsync(".modal__box.modal--active .modal__inner .link__text:nth-child(1)")).GetAttributeAsync("href")).Trim();
+                if (!scheduleURL.Contains("https://www.cvs.com")){
+                    scheduleURL = $"https://www.cvs.com{scheduleURL}";
+                }
+                string lastUpdatedRaw = (await (await FetcherPageRef.QuerySelectorAsync(".modal__box.modal--active .modal__inner div[data-id='timestamp'] p")).GetInnerTextAsync());
+                var lastUpdated = lastUpdatedRaw.Replace("Status as of", "").Replace("Availability can change quickly based on demand.", "").Trim();
+
+
                 // create state obj
                 var foundState = new State(
                     title: stateName,
-                    cities: fetchedCities
+                    cities: fetchedCities,
+                    scheduleLink: (scheduleURL == null || scheduleURL.Length < 1) ? VAC_ROOT_URL : scheduleURL,
+                    lastUpdated: lastUpdated
                 );
 
                 states.Add(foundState);
 
                 // close modal
                 await FetcherPageRef.ClickAsync(".modal__box.modal--active .modal__inner button");
-                await FetcherPageRef.WaitForSelectorAsync(".modal__box modal--active", state: WaitForState.Hidden);
+                await FetcherPageRef.WaitForSelectorAsync(".modal__box.modal--active", state: WaitForState.Hidden);
             }
 
             await Task.Delay(5000);
