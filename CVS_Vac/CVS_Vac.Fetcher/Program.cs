@@ -15,6 +15,9 @@ namespace CVS_Vac.Fetcher
         private static IBrowser BrowserRef;
         private static IPage FetcherPageRef;
 
+        private static int FETCHER_MINUTES = 1;
+        private static int FETCHER_INTERVAL = (60000 * FETCHER_MINUTES);
+
         private static string SENDGRID_API_KEY;
         private static List<string> SUBSCRIBER_EMAILS = new List<string>();
         private static int DAILY_NOTICE_LIMIT = 5;
@@ -31,13 +34,18 @@ namespace CVS_Vac.Fetcher
             SetupScraper().Wait();
 
             // run initial setup
-            await InitialSetup();
+            InitialSetup().Wait();
+
+            Task.Delay(1000).Wait();
+
+            // begin automated fetcher process
+            await StartFetcher();
         }
 
         private static async Task SetupScraper()
         {
             PlaywrightRef = await Playwright.CreateAsync();
-            BrowserRef = await PlaywrightRef.Firefox.LaunchAsync(headless: true);
+            BrowserRef = await PlaywrightRef.Firefox.LaunchAsync(headless: false);
             FetcherPageRef = await BrowserRef.NewPageAsync();
             await FetcherPageRef.GoToAsync(VAC_ROOT_URL, waitUntil: LifecycleEvent.Networkidle);
         }
@@ -89,7 +97,7 @@ namespace CVS_Vac.Fetcher
                 }
             }
 
-            Console.WriteLine("\nPlease select the state (number) you would like to subscribe to for notifications from above:");
+            Console.WriteLine("\nPlease select the state/territory (number) you would like to subscribe to for notifications from above:");
             var selectedStateIndex = Math.Min(Int32.Parse(Console.ReadLine()) - 1, FETCHED_STATES.Count - 1);
             // select state
             FETCHED_STATES[selectedStateIndex].Subscribed = true;
@@ -116,15 +124,40 @@ namespace CVS_Vac.Fetcher
             }
 
             Console.WriteLine($"\nNow that you've selected your state ({selectedState.Title}) please enter a comma-separated list of the cities (numbers) you'd like to subscribe to:");
-            Console.WriteLine(Console.ReadLine());
+            string[] selectedCitiesRaw = Console.ReadLine().Trim().Replace(" ", "").Split(",");
+            List<City> selectedCities = new List<City>();
+            foreach(var cityNum in selectedCitiesRaw)
+            {
+                var cityIndex = Math.Max(Int32.Parse(cityNum) - 1, 0);
+                selectedState.Cities[cityIndex].Subscribed = true;
+                selectedCities.Add(selectedState.Cities[cityIndex]);
+            }
+
+            // completion message
+            Console.Clear();
+            Console.Write("Setup is now complete and you've selected the following:\n" +
+                $"SendGridKey: {SENDGRID_API_KEY}\n" +
+                $"Subscribers: {subscriberListRaw}\n" +
+                $"Daily Notice Limit: {DAILY_NOTICE_LIMIT}\n" +
+                $"Selected State: {selectedState.Title}\n" +
+                $"Selected Cities: ");
+            foreach(var city in selectedCities)
+            {
+                Console.Write($"{city.Title}; ");
+            }
+            Console.WriteLine("\n\n");
         }
 
-        private static async Task<List<State>> GetStates()
+        private static async Task<List<State>> GetStates(bool refreshPage = false)
         {
             List<State> states = new List<State>();
 
-            // await FetcherPageRef.ReloadAsync();
-
+            if (refreshPage)
+            {
+                await FetcherPageRef.ReloadAsync();
+                await FetcherPageRef.WaitForLoadStateAsync(LifecycleEvent.Networkidle);
+            }
+            
             // parse state list
             var statesAccordian = (await FetcherPageRef.QuerySelectorAllAsync(".container .accordian__container .accordian__elemcontent")).First();
             var stateAnchorElements = await statesAccordian.QuerySelectorAllAsync(".link__column li.link__row a");
@@ -195,6 +228,74 @@ namespace CVS_Vac.Fetcher
             }
 
             return cities;
+        }
+
+        private static async Task StartFetcher()
+        {
+            await Task.Run(() =>
+            {
+                while (true)
+                {
+                   UpdateData().Wait();
+
+                    Console.WriteLine("I'm sleeping...");
+                    Thread.Sleep(FETCHER_INTERVAL);
+                }
+            });
+        }
+
+        private static async Task UpdateData()
+        {
+            /*List<State> subbedStates = new List<State>();
+            List<City> subbedCities = new List<City>();
+
+            // check which states user is subscribed to
+            for (var s=0; s<FETCHED_STATES.Count; s++)
+            {
+                if (FETCHED_STATES[s].Subscribed)
+                {
+                    subbedStates.Add(FETCHED_STATES[s]);
+                    for (var c=0; c<FETCHED_STATES[s].Cities.Count; c++)
+                    {
+                        if (FETCHED_STATES[s].Cities[c].Subscribed)
+                        {
+                            subbedCities.Add(FETCHED_STATES[s].Cities[c]);
+                        }
+                    }
+                }
+            }*/
+
+            Console.WriteLine("Checking for changes in availability... (this may take a moment)");
+            List<State> newStates = await GetStates(refreshPage: true);
+
+            for (var s = 0; s < newStates.Count; s++)
+            {
+                var oldState = FETCHED_STATES[s];
+                var newState = newStates[s];
+
+                for (var c = 0; c < newState.Cities.Count; c++)
+                {
+                    // check if state was subscribed to
+                    if (oldState.Subscribed)
+                    {
+                        // check if city was subscribed to
+                        if (oldState.Cities[c].Subscribed)
+                        {
+                            if (oldState.Cities[c].IsAvailable == false && newState.Cities[c].IsAvailable)
+                            {
+                                Console.WriteLine($"Notifying ({SUBSCRIBER_EMAILS[0]}) that {newState.Title} has a new vaccine opening in: {newState.Cities[c].Title}");
+                            }
+                        }
+                    }
+
+                    // update old city value
+                    oldState.Cities[c].IsAvailable = newState.Cities[c].IsAvailable;
+                }
+
+                // update old state value
+                oldState.LastUpdated = newState.LastUpdated;
+                oldState.ScheduleLink = newState.ScheduleLink;
+            }
         }
     }
 }
