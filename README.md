@@ -10,7 +10,7 @@ A quick web scraper that checks CVS's website for Covid-19 vaccine availability 
 1. Head over to releases section (https://github.com/efeliz/cvs-vac-availability/releases) and download either `win-x64.zip` (for Windows) or `osx-x64.zip` (for Mac)
 2. Unzip the downloaded file
 3. On Windows double-click the `CVS-Vac-Fetcher.exe` file to run and follow the prompts on-screen.
-4. On Mac open terminal -> `cd` to the unzipped folder -> enter command `sudo ./CVS-Vac-Fetcher` to run the program -> follow prompts on-screen. 
+4. On Mac open terminal -> `cd` to the unzipped folder -> enter command `./CVS-Vac-Fetcher` to run the program -> follow prompts on-screen. 
 
 ### How to Run Application (less easy way - for developers)
 1. Download source code by either cloning, forking, or selecting "Source Code" on the releases page (https://github.com/efeliz/cvs-vac-availability/releases)
